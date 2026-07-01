@@ -32,6 +32,7 @@ airflow/webserver_config.py
 
 # Data
 raw_epg.xml
+tmp/
 
 # OS
 .DS_Store

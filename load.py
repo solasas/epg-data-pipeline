@@ -1,4 +1,4 @@
-"""Load cleaned channels/programmes DataFrames into PostgreSQL using upsert."""
+   # """Load cleaned channels/programmes DataFrames into PostgreSQL using upsert."""
 from pathlib import Path
 
 import pandas as pd
@@ -33,6 +33,7 @@ PROGRAMMES_UPSERT_SQL = """
         ingested_at = EXCLUDED.ingested_at
     RETURNING (xmax = 0) AS inserted
 """
+
 
 
 def create_tables(conn):
