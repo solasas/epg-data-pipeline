@@ -3,14 +3,45 @@ import os
 import sys
 from datetime import datetime
 
+import requests
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from dotenv import load_dotenv
 
 PROJECT_DIR = "/opt/airflow/project"
 TMP_DIR = os.path.join(PROJECT_DIR, "tmp")
 
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
+
+# Loaded explicitly (not via cwd-based discovery) since this module-level code
+# runs at DAG parse time, before any task has chdir'd into PROJECT_DIR.
+load_dotenv(dotenv_path=os.path.join(PROJECT_DIR, ".env"))
+
+
+def notify_slack_on_failure(context):
+    """on_failure_callback: post a Slack alert when a task exhausts its retries."""
+    webhook_url = os.getenv("SLACK_WEBHOOK_URL")
+    if not webhook_url:
+        print("SLACK_WEBHOOK_URL not set — skipping Slack alert. See task logs for the failure.")
+        return
+
+    task_instance = context["task_instance"]
+    message = (
+        ":rotating_light: *Airflow task failed*\n"
+        f"*DAG*: `{context['dag'].dag_id}`\n"
+        f"*Task*: `{task_instance.task_id}`\n"
+        f"*Run*: `{context['run_id']}`\n"
+        f"*Error*: `{context.get('exception')}`\n"
+        f"<{task_instance.log_url}|View logs>"
+    )
+
+    try:
+        response = requests.post(webhook_url, json={"text": message}, timeout=10)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        # Don't let a failed alert mask the original task failure.
+        print(f"Failed to send Slack alert: {e}")
 
 
 def run_extract():
@@ -60,6 +91,7 @@ def run_load():
 default_args = {
     "owner": "epg-pipeline",
     "retries": 1,
+    "on_failure_callback": notify_slack_on_failure,
 }
 
 with DAG(

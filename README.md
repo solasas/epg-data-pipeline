@@ -98,6 +98,13 @@ the host machine) rather than `localhost`, which inside a container would
 mean the container itself. Airflow gets its own metadata Postgres container,
 kept completely separate from the application's data.
 
+**Alerting fails soft, not loud.** `epg_pipeline.py` posts to a Slack webhook
+via `on_failure_callback` when a task exhausts its retries, but if
+`SLACK_WEBHOOK_URL` isn't configured (or the webhook POST itself fails), it
+just logs and returns rather than raising. The alert is a side effect of a
+failure, not a dependency of the pipeline — a broken Slack integration
+shouldn't be able to mask or compound the original task failure.
+
 ## Getting started
 
 ```bash
@@ -138,17 +145,16 @@ trigger a run — or let it run on its own at midnight daily.
 | Endpoint | Query params | Behavior |
 |---|---|---|
 | `GET /channels` | — | All channels |
-| `GET /schedule` | `channel_id`, `date`, `category` (any combination, all optional) | Programmes matching the given filters, or all programmes if none are given |
+| `GET /schedule` | `channel_id`, `date`, `category` (any combination, all optional); `limit` (default 50, max 500), `offset` (default 0) | Paginated programmes matching the given filters — response includes `total`/`limit`/`offset`/`results`. All programmes if no filters are given |
 | `GET /schedule/now` | — | Whatever is currently airing, across all channels |
 
 Every endpoint returns **404** with a `{"detail": "..."}` message when a query
 matches zero rows, rather than a silent empty `200` — so a typo'd
-`channel_id` or an empty result is unambiguous to the caller.
+`channel_id` or an empty result is unambiguous to the caller. `/schedule`
+distinguishes that from simply paging past the end of a real result set
+(`total > 0` but `results: []`), which still returns `200`.
 
 ## What I'd do next
 
-- Pagination on `/schedule` (currently returns unbounded results — fine at
-  ~45k rows locally, not fine at scale)
-- Alerting on Airflow task failure (currently just relies on the UI/logs)
 - A second XMLTV source, to prove the schema and upsert key generalize beyond
   one feed's quirks (e.g. this feed never populates `<category>`)
