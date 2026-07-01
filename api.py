@@ -32,6 +32,8 @@ def get_schedule(
     channel_id: Optional[str] = Query(None, description="Filter by channel id, e.g. 5.uk"),
     date: Optional[date_type] = Query(None, description="Filter by calendar date (UTC), e.g. 2026-07-06"),
     category: Optional[str] = Query(None, description="Filter by category, e.g. Sports"),
+    limit: int = Query(50, ge=1, le=500, description="Max rows to return (1-500)"),
+    offset: int = Query(0, ge=0, description="Number of rows to skip"),
 ):
     conditions = []
     params = []
@@ -52,15 +54,31 @@ def get_schedule(
         conditions.append("category ILIKE %s")
         params.append(category)
 
-    query = "SELECT * FROM programmes"
-    if conditions:
-        query += " WHERE " + " AND ".join(conditions)
-    query += " ORDER BY start_time"
+    where_clause = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
-    programmes = _fetch_all(query, params)
-    if not programmes:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT COUNT(*) AS total FROM programmes{where_clause}", params)
+            total = cur.fetchone()["total"]
+
+            cur.execute(
+                f"SELECT * FROM programmes{where_clause} ORDER BY start_time LIMIT %s OFFSET %s",
+                params + [limit, offset],
+            )
+            programmes = cur.fetchall()
+    finally:
+        conn.close()
+
+    if total == 0:
         raise HTTPException(status_code=404, detail="No programmes found matching the given filters.")
-    return programmes
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "results": programmes,
+    }
 
 
 @app.get("/schedule/now")
