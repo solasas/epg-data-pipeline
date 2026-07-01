@@ -140,6 +140,20 @@ docker compose up -d airflow-webserver airflow-scheduler
 Open `http://localhost:8080` (`admin` / `admin`), unpause `epg_pipeline`, and
 trigger a run — or let it run on its own at midnight daily.
 
+### Enabling Slack alerts on task failure
+
+By default, a failed task just logs and moves on — no external notification.
+To get a real Slack message when `extract`/`transform`/`load` fails:
+
+1. In Slack: **your workspace → Apps → Incoming Webhooks** → create a webhook
+   for whichever channel should receive alerts → copy the URL.
+2. Set `SLACK_WEBHOOK_URL=<that URL>` in your `.env`.
+3. Restart the Airflow containers so the DAG picks up the new env var:
+   `docker compose up -d airflow-webserver airflow-scheduler`.
+
+Leaving it blank is safe — `notify_slack_on_failure` checks for it and skips
+silently rather than erroring.
+
 ## API reference
 
 | Endpoint | Query params | Behavior |
