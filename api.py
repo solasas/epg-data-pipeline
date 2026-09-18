@@ -3,10 +3,18 @@ from datetime import date as date_type, datetime, time, timedelta, timezone
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 
 from db.connection import get_connection
 
 app = FastAPI(title="EPG API", description="Electronic Program Guide data API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:5174"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 
 
 def _fetch_all(query, params=()):

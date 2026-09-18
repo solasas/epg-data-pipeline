@@ -2,7 +2,8 @@
 
 A daily data pipeline that downloads a public XMLTV Electronic Program Guide (TV
 schedule) feed, cleans it, loads it into PostgreSQL, orchestrates the whole thing
-on a schedule with Airflow, and serves it back out through a FastAPI service.
+on a schedule with Airflow, and serves it back out through a FastAPI service —
+with a React frontend on top for browsing the guide.
 
 ## The elevator pitch
 
@@ -32,6 +33,7 @@ framework required to reason about it.
 | DB driver | `psycopg2-binary` | Mature, synchronous Postgres driver; synchronous is fine since this is a batch pipeline, not a high-concurrency service |
 | Orchestration | `Apache Airflow` (Docker Compose, `LocalExecutor`) | The pipeline needs to run on a schedule, retry on failure, and show run history — exactly Airflow's job. `LocalExecutor` (no Celery/Redis) because this runs on one machine |
 | API | `FastAPI` + `uvicorn` | Type hints double as request validation and auto-generated OpenAPI docs, with no separate DTO/annotation layer |
+| Frontend | `React` + `Vite` | A separate `npm` package (`frontend/`) that consumes the API over `fetch`; kept independent of the Python venv so either side can be developed/deployed on its own |
 
 ## Project structure
 
@@ -51,6 +53,10 @@ Dockerfile                     # Airflow image + this project's Python deps
 
 requirements.txt             # Deps for running the scripts/API directly (host venv)
 requirements-airflow.txt     # Same deps, installed inside the Airflow image
+
+frontend/                    # React + Vite app, its own npm package
+  src/api.js                 # fetch wrappers for /channels, /schedule, /schedule/now
+  src/App.jsx                # Now-airing list (client-side filtered) + server-filtered schedule table
 ```
 
 ## Design decisions worth knowing (and defending)
@@ -105,6 +111,19 @@ just logs and returns rather than raising. The alert is a side effect of a
 failure, not a dependency of the pipeline — a broken Slack integration
 shouldn't be able to mask or compound the original task failure.
 
+**The frontend is a separate `npm` package, not folded into the Python venv.**
+`api.py` and `frontend/` deploy and version independently — the API doesn't
+know or care what's calling it, it just needs `CORSMiddleware` configured to
+allow the Vite dev origin (`localhost:5173`/`5174`) during local development.
+
+**`/schedule/now` has no `channel_id` filter, so the frontend filters it
+client-side.** The endpoint always returns everything currently airing across
+every channel; `App.jsx` applies the selected channel as a `.filter()` over
+that response rather than adding server-side filtering for what's a small,
+already-fetched list — the Schedule table, by contrast, filters via the
+`/schedule?channel_id=` query param since that list can be tens of thousands
+of rows and pagination happens server-side.
+
 ## Getting started
 
 ```bash
@@ -127,6 +146,11 @@ python load.py         # parses + transforms + upserts into epg_db, then verifie
 
 # 5. Run the API
 python main.py         # http://localhost:8000/docs for interactive Swagger UI
+
+# 6. Run the frontend (separate terminal)
+cd frontend
+npm install
+npm run dev             # http://localhost:5173
 ```
 
 ### Running the pipeline on a schedule (Airflow)
